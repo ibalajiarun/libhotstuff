@@ -29,6 +29,10 @@
 #include "hotstuff/type.h"
 #include "hotstuff/client.h"
 
+#include <prometheus/histogram.h>
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
+
 using salticidae::Config;
 
 using hotstuff::ReplicaID;
@@ -41,6 +45,8 @@ using hotstuff::HotStuffError;
 using hotstuff::uint256_t;
 using hotstuff::opcode_t;
 using hotstuff::command_t;
+
+using namespace prometheus;
 
 EventContext ec;
 ReplicaID proposer;
@@ -64,6 +70,27 @@ std::unordered_map<const uint256_t, Request> waiting;
 std::vector<NetAddr> replicas;
 std::vector<std::pair<struct timeval, double>> elapsed;
 Net mn(ec, Net::Config());
+
+Histogram::BucketBoundaries exponential_buckets(double start, double factor, size_t count) {
+    Histogram::BucketBoundaries boundaries(count);
+    for (int i = 0; i < boundaries.size(); i++) {
+        boundaries[i] = start;
+        start *= factor;
+    }
+    return boundaries;
+}
+
+// create a metrics registry with component=main labels applied to all its
+// metrics
+Registry registry;
+auto& latency_histogram = BuildHistogram()
+                                .Name("hotstuff_client_latency")
+                                .Help("Hotstuff client side latency")
+                                .Register(registry);
+
+auto &lat = latency_histogram.Add(
+                            {{"job", "hotstuff_clinet"}}, 
+                            exponential_buckets(0.001, 2, 14));                                
 
 void connect_all() {
     for (size_t i = 0; i < replicas.size(); i++)
@@ -99,6 +126,7 @@ void client_resp_cmd_handler(MsgRespCmd &&msg, const Net::conn_t &) {
     et.stop();
     if (++it->second.confirmed <= nfaulty) return; // wait for f + 1 ack
 #ifndef HOTSTUFF_ENABLE_BENCHMARK
+    lat.Observe(et.elapsed_sec);
     HOTSTUFF_LOG_INFO("got %s, wall: %.3f, cpu: %.3f",
                         std::string(fin).c_str(),
                         et.elapsed_sec, et.cpu_elapsed_sec);
@@ -118,6 +146,9 @@ std::pair<std::string, std::string> split_ip_port_cport(const std::string &s) {
 
 int main(int argc, char **argv) {
     Config config("hotstuff.conf");
+
+    // create an http server running on port 8080
+    Exposer exposer{"127.0.0.1:8080"};
 
     auto opt_idx = Config::OptValInt::create(0);
     auto opt_replicas = Config::OptValStrVec::create();

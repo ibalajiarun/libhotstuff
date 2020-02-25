@@ -28,7 +28,7 @@ find_package(Threads REQUIRED)
 include(ExternalProject)
 include_directories(secp256k1/include)
 ExternalProject_Add(libsecp256k1
-    SOURCE_DIR secp256k1
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/autogen.sh
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/configure --disable-shared --with-pic --with-bignum=no --enable-module-recovery
     BUILD_COMMAND make
@@ -41,6 +41,25 @@ set_target_properties(
     PROPERTIES IMPORTED_LOCATION
     ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/.libs/libsecp256k1.a)
 add_dependencies(secp256k1 libsecp256k1)
+
+# prometheus
+
+find_package(prometheus-cpp REQUIRED 
+    CONFIG
+    PATHS ${CMAKE_CURRENT_SOURCE_DIR}/prometheus-build/usr/local/lib/cmake/prometheus-cpp NO_DEFAULT_PATH)
+include_directories(prometheus-build/usr/local/include)
+
+# add_library(prometheus-core STATIC IMPORTED)
+# set_target_properties(
+#     prometheus-core
+#     PROPERTIES IMPORTED_LOCATION
+#     ${CMAKE_CURRENT_SOURCE_DIR}/prometheus-build/usr/local/lib/libprometheus-cpp-core.a)
+# 
+# add_library(prometheus-pull STATIC IMPORTED)
+# set_target_properties(
+#     prometheus-pull
+#     PROPERTIES IMPORTED_LOCATION
+#     ${CMAKE_CURRENT_SOURCE_DIR}/prometheus-build/usr/local/lib/libprometheus-cpp-pull.a)
 
 # add libraries
 
@@ -61,11 +80,11 @@ if(BUILD_SHARED)
     set_property(TARGET hotstuff PROPERTY POSITION_INDEPENDENT_CODE 1)
     add_library(hotstuff_shared SHARED $<TARGET_OBJECTS:hotstuff>)
     set_target_properties(hotstuff_shared PROPERTIES OUTPUT_NAME "hotstuff")
-    target_link_libraries(hotstuff_shared salticidae_static secp256k1 crypto ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries(hotstuff_shared salticidae_static secp256k1 prometheus-cpp::core prometheus-cpp::pull crypto ${CMAKE_THREAD_LIBS_INIT})
 endif()
 add_library(hotstuff_static STATIC $<TARGET_OBJECTS:hotstuff>)
 set_target_properties(hotstuff_static PROPERTIES OUTPUT_NAME "hotstuff")
-target_link_libraries(hotstuff_static salticidae_static secp256k1 crypto ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(hotstuff_static salticidae_static secp256k1 prometheus-cpp::core prometheus-cpp::pull crypto ${CMAKE_THREAD_LIBS_INIT})
 
 add_subdirectory(test)
 
